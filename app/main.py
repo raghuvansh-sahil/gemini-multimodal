@@ -11,7 +11,7 @@ gemini_model = None
 @app.on_event("startup")
 def on_startup():
     global gemini_model
-    genai.configure(api_key='AIzaSyDZtUT0tMpVL1gaDudH5RENahr1zi55LX8')
+    genai.configure(api_key='AIzaSyCn_qLK6GuFHcACihDgS9xaQ_OTSwyQylg')
     gemini_model = genai.GenerativeModel('gemini-1.5-flash-latest')
 
     initialise_database()
@@ -23,8 +23,8 @@ async def insert_receipt(image: UploadFile = File(...)):
 
     if receipt is not None:
         insert_receipt_inDB(receipt)
-        initialise_categorized_spending()
-        populate_categorized_spending(gemini_model)
+    
+    return receipt
 
 @app.get('/get-receipts')
 def get_receipts():
