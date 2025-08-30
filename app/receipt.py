@@ -1,20 +1,55 @@
 import io
 import pandas as pd
-from PIL import Image
 import json
-from datetime import datetime
+from PIL import Image
 
-def process_image(gemini_model, image_bytes):
+def parse_image(gemini_model, image_bytes):
     try:
         image = Image.open(io.BytesIO(image_bytes))
-        prompt = '''Extract the store name, store address, receipt date, receipt time, item details (item name, quantity, price and total), receipt subtotal, 
-        taxes details (tax name, percent, amount) and receipt total from this receipt image.
-        Provide the output as a JSON object with eight keys: "store_name", "store_address", "date", "time", "items", "subtotal", "taxes" and "total".
-        The value of "date" should be the date of the receipt in DD-MM-YYYY format.
-        The value of "time" should be the time of the receipt in HH-MM-SS format (in 24 hours format).
-        The value of "items" should be a list of JSON objects, where each object represents an item and has the keys "item_name", "quantity", "price", and "total".
-        The value of "taxes" should be a list of JSON objects, where each object represents a tax and has the keys "tax_name", "percent", and "amount".
-        For example:
+        prompt = '''
+        Agent Role: receipt_parser  
+        Tool Usage: Exclusively use the Gemini Multimodal API (vision + text) to process each receipt image.
+
+        Overall Goal: To generate a normalized, machine-readable JSON representation of *every* data element present on one or more provided receipt images. The agent will iteratively invoke Gemini, inspect the returned JSON for completeness/correctness, and refine the prompt until all fields are captured accurately.
+
+        Inputs (from calling agent/environment):
+
+        •⁠  ⁠provided_receipt_images: (list of base64 strings or public URLs, mandatory) The receipt(s) to be parsed. The receipt_parser agent must not prompt the user for additional images.
+        •⁠  ⁠target_confidence: (float, optional, default: 0.95) The required confidence threshold (0–1) for critical numeric fields (e.g., total, tax, item prices). If Gemini’s confidence for any such field falls below this value, the agent must re-prompt to clarify.
+        •⁠  ⁠max_iterations: (integer, optional, default: 3) Maximum number of Gemini calls allowed per receipt before flagging the receipt as “needs manual review”.
+
+        Mandatory Process – Data Extraction:
+
+        1.⁠ ⁠Iterative Parsing  
+          a. Initial call: Supply the image and the JSON schema below.  
+          b. Validation: Inspect the returned JSON.  
+            - If any *required* field is missing or null → re-prompt with explicit instructions to locate it.  
+            - If any numeric field’s confidence is < target_confidence → ask Gemini to zoom/crop the relevant region and re-extract.  
+          c. Repeat up to max_iterations.
+
+        2.⁠ ⁠Information Focus Areas (ensure 100 % coverage)  
+          - Retailer details: name, address.  
+          - Transaction meta: date, time.  
+          - Line items: full product/service names, quantity, unit price, total.  
+          - Tender & totals: subtotal, tax breakdown by rate, total paid.
+
+        3.⁠ ⁠Data Quality  
+          - Normalize all dates to ISO-8601 (YYYY-MM-DD).
+
+        4. Category Assignment
+          - For each "item_name", always analyze and fill the "category" according to the product type, using your own best judgment and knowledge. Do not omit this field.   
+
+        Mandatory Process – Synthesis & Validation:
+
+        •⁠  ⁠Source Exclusivity: Base every output solely on the Gemini responses for the provided image(s). Do not hallucinate missing data.  
+        •⁠  ⁠Consistency Checks:  
+          – Ensure Σ(line-item extended prices) + taxes ≈ total (within ±0.02).  
+          – Reject negative or zero quantities/prices unless explicitly marked as “void”.  
+          – Cross-check payment amounts sum to total paid.  
+        •⁠  ⁠Output Format Compliance: Produce strictly valid JSON conforming to the schema below.
+
+        Expected Final Output (Structured JSON):
+
         {
           "store_name": "Lucky Karyana Store",
           "store_address": "Model Town, Ludhiana",
@@ -22,7 +57,8 @@ def process_image(gemini_model, image_bytes):
           "time": "15:20:22",
           "items": [
             {
-              "item_name": "Example Item",
+              "item_name": "Potato",
+              "category": "groceries,
               "quantity": 1,
               "price": 10.00,
               "total": 10.00
@@ -38,7 +74,6 @@ def process_image(gemini_model, image_bytes):
           ],
           "total": 137.00
         }
-        Do not include any other text or formatting in the response, only the JSON object.
         '''
         response = gemini_model.generate_content([prompt, image])
 
@@ -64,5 +99,3 @@ def process_image(gemini_model, image_bytes):
     except Exception as e:
         print(f"An error occurred: {e}")
         return None
-    
-    

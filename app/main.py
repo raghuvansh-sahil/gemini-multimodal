@@ -1,6 +1,6 @@
 import google.generativeai as genai
 from fastapi import FastAPI, UploadFile, File
-from receipt import process_image
+from receipt import parse_image
 from database import initialise_database, insert_receipt_inDB, get_receipts_fromDB
 from categories import initialise_categorized_spending, populate_categorized_spending, get_categorized_spending
 from spending import spending_per_day, spending_per_month, spending_per_year
@@ -11,16 +11,16 @@ gemini_model = None
 @app.on_event("startup")
 def on_startup():
     global gemini_model
-    genai.configure(api_key='AIzaSyCn_qLK6GuFHcACihDgS9xaQ_OTSwyQylg')
+    genai.configure(api_key='YOUR_API_KEY')
     gemini_model = genai.GenerativeModel('gemini-1.5-flash-latest')
 
     initialise_database()
 
-@app.post("/insert-receipt")
-async def insert_receipt(image: UploadFile = File(...)):
+@app.post("/parse-receipt")
+async def parse_receipt(image: UploadFile = File(...)):
     image_bytes = await image.read()
-    receipt = process_image(gemini_model, image_bytes)
-
+    receipt = parse_image(gemini_model, image_bytes)
+    
     if receipt is not None:
         insert_receipt_inDB(receipt)
     
